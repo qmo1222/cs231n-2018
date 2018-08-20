@@ -253,11 +253,13 @@ class FullyConnectedNet(object):
         fc_cache = {}
         relu_cache = {}
         norm_cache = {}
+        dropout_cache = {}
 
         scores = X
         for i in range(1, self.num_layers):
             W, b = self.params['W'+str(i)], self.params['b'+str(i)]
             scores, fc_cache[i] = affine_forward(scores, W, b)
+
             if self.normalization == 'batchnorm':
                 gamma = self.params['gamma'+str(i)]
                 beta = self.params['beta'+str(i)]
@@ -268,7 +270,12 @@ class FullyConnectedNet(object):
                 beta = self.params['beta'+str(i)]
                 scores, norm_cache[i] = layernorm_forward(
                     scores, gamma, beta, self.bn_params[i-1])
+
             scores, relu_cache[i] = relu_forward(scores)
+
+            if self.use_dropout:
+                scores, dropout_cache[i] = dropout_forward(scores, self.dropout_param)
+
         i = self.num_layers
         W, b = self.params['W'+str(i)], self.params['b'+str(i)]
         scores, fc_cache[i] = affine_forward(scores, W, b)
@@ -304,7 +311,10 @@ class FullyConnectedNet(object):
         loss += 0.5 * self.reg * np.sum(W**2)
 
         for i in reversed(range(1, self.num_layers)):
+            if self.use_dropout:
+                dout = dropout_backward(dout, dropout_cache[i])
             dout = relu_backward(dout, relu_cache[i])
+
             if self.normalization == 'batchnorm':
                 dout, dgamma, dbeta = batchnorm_backward_alt(dout, norm_cache[i])
                 grads['gamma'+str(i)] = dgamma
@@ -313,6 +323,7 @@ class FullyConnectedNet(object):
                 dout, dgamma, dbeta = layernorm_backward(dout, norm_cache[i])
                 grads['gamma'+str(i)] = dgamma
                 grads['beta'+str(i)] = dbeta
+
             dout, dw, db = affine_backward(dout, fc_cache[i])
             W = self.params['W'+str(i)]
             grads['W'+str(i)] = dw + self.reg * W
