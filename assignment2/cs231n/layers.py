@@ -333,8 +333,8 @@ def layernorm_forward(x, gamma, beta, ln_param):
     # transformations you could perform, that would enable you to copy over   #
     # the batch norm code and leave it almost unchanged?                      #
     ###########################################################################
-    mu = np.mean(x, axis=0)
-    var = np.var(x, axis=0)
+    mu = np.mean(x, axis=1, keepdims=True)
+    var = np.var(x, axis=1, keepdims=True)
     xmu = x - mu
     vareps = np.sqrt(var+eps)
     x_norm = xmu / vareps
@@ -371,12 +371,12 @@ def layernorm_backward(dout, cache):
     # implementation of batch normalization. The hints to the forward pass    #
     # still apply!                                                            #
     ###########################################################################
-    N = dout.shape[0]
+    N, D = dout.shape
     xmu, vareps, gamma, x_norm = cache
 
     dx_norm = dout * gamma
-    dx = 1/N/vareps * (N*dx_norm - np.sum(dx_norm, axis=0)
-                       - x_norm*np.sum(dx_norm*x_norm, axis=0))
+    dx = 1/D/vareps * (D*dx_norm - np.sum(dx_norm, axis=1, keepdims=True)
+                       - x_norm*np.sum(dx_norm*x_norm, axis=1, keepdims=True))
 
     dgamma = np.sum(dout*x_norm, axis=0)
     dbeta = np.sum(dout, axis=0)
@@ -689,7 +689,11 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    x_flat = np.transpose(x, (0, 2, 3, 1)).reshape(-1, C)
+    out, cache = batchnorm_forward(x_flat, gamma, beta, bn_param)
+    out = out.reshape(N, H, W, C)
+    out = np.transpose(out, (0, 3, 1, 2))
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -719,7 +723,11 @@ def spatial_batchnorm_backward(dout, cache):
     # vanilla version of batch normalization you implemented above.           #
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
-    pass
+    N, C, H, W = dout.shape
+    dout_flat = np.transpose(dout, (0, 2, 3, 1)).reshape(-1, C)
+    dx, dgamma, dbeta = batchnorm_backward(dout_flat, cache)
+    dx = dx.reshape(N, H, W, C)
+    dx = np.transpose(dx, (0, 3, 1, 2))
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -755,7 +763,18 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     # the bulk of the code is similar to both train-time batch normalization  #
     # and layer normalization!                                                #
     ###########################################################################
-    pass
+    N, C, H, W = x.shape
+    x_group = x.reshape(N, G, -1)
+    mu = np.mean(x_group, axis=2, keepdims=True)
+    var = np.var(x_group, axis=2, keepdims=True)
+
+    xmu = x_group - mu
+    vareps = np.sqrt(var+eps)
+    x_norm = xmu / vareps
+    x_norm = x_norm.reshape(N, C, H, W)
+    out = gamma * x_norm + beta
+
+    cache = (G, xmu, vareps, gamma, x_norm)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -781,7 +800,20 @@ def spatial_groupnorm_backward(dout, cache):
     # TODO: Implement the backward pass for spatial group normalization.      #
     # This will be extremely similar to the layer norm implementation.        #
     ###########################################################################
-    pass
+    N, C, H, W = dout.shape
+    G, xmu, vareps, gamma, x_norm = cache
+    group_size = C//G*H*W
+
+    dx_norm = dout * gamma
+    dx_norm = dx_norm.reshape(N, G, group_size)
+    x_group = x_norm.reshape(N, G, group_size)
+    dx = 1/group_size/vareps * (group_size*dx_norm
+                                - np.sum(dx_norm, axis=2, keepdims=True)
+                                - x_group*np.sum(dx_norm*x_group,
+                                                 axis=2, keepdims=True))
+    dx = dx.reshape(N, C, H, W)
+    dgamma = np.sum(dout*x_norm, axis=(0, 2, 3), keepdims=True)
+    dbeta = np.sum(dout, axis=(0, 2, 3), keepdims=True)
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
